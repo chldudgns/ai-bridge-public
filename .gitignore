@@ -1,0 +1,24 @@
+# Secrets and local credentials
+google.env
+.env
+*.key
+*.pem
+*.pfx
+
+# Runtime state and local artifacts
+bridge.lock
+status.json
+status.json.bak
+logs/
+queue/
+completed/
+failed/
+result/
+__pycache__/
+*.pyc
+
+# Local editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
