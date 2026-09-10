@@ -577,6 +577,33 @@ if arguments.timeout < 1:
     print("실행 실패: timeout은 1 이상이어야 합니다.")
     raise SystemExit(1)
 
+# Production Workbox queue consumption belongs to GCP. Keep this legacy
+# Windows bridge read-only unless an operator explicitly opts into recovery.
+readonly_request = any((
+    arguments.status_json,
+    arguments.status,
+    arguments.task,
+    arguments.history,
+    arguments.result,
+    arguments.logs is not None,
+    arguments.queue,
+    arguments.health,
+    arguments.self_test,
+))
+if os.name == "nt" and os.getenv("PROJECTA_LOCAL_WORKBOX_ALLOW") != "1" and (
+    arguments.submit or arguments.retry or not readonly_request
+):
+    marker = os.path.join(BASE_DIR, "cloud-only-status.json")
+    with open(marker, "w", encoding="utf-8") as f:
+        json.dump({
+            "state": "LOCAL_RUNTIME_DISABLED",
+            "reason": "GCP Workbox is the sole queue consumer; legacy bridge opt-in is required.",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }, f, ensure_ascii=False, indent=2)
+    print("LOCAL_RUNTIME_DISABLED: GCP Workbox가 유일한 큐 소비자입니다. "
+          "레거시 브리지는 PROJECTA_LOCAL_WORKBOX_ALLOW=1 명시가 필요합니다.")
+    raise SystemExit(0)
+
 if arguments.status_json:
     print_status_json()
     raise SystemExit(0)
