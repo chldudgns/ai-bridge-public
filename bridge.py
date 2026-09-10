@@ -24,6 +24,41 @@ LOCK_FILE = os.path.join(BASE_DIR, "bridge.lock")
 LOG_FILE = os.path.join(LOG_DIR, "bridge.log")
 MAX_LOG_BYTES = 5 * 1024 * 1024
 
+
+def _codex_candidates():
+    """Known Codex CLI locations for Windows launchers with a reduced PATH."""
+    roots = []
+    for value in (os.getenv("LOCALAPPDATA"), os.path.join(os.path.expanduser("~"), "AppData", "Local"), r"C:\\Users\\movie\\AppData\\Local"):
+        if value and value not in roots:
+            roots.append(value)
+    candidates = []
+    for root in roots:
+        for relative in (os.path.join("Programs", "OpenAI", "Codex", "bin", "codex.exe"), os.path.join("OpenAI", "Codex", "bin", "codex.exe")):
+            candidate = os.path.join(root, relative)
+            if candidate not in candidates:
+                candidates.append(candidate)
+    return candidates
+
+
+def resolve_codex():
+    """Resolve Codex from PATH, then from the fixed standard-install allowlist."""
+    resolved = shutil.which("codex")
+    if resolved:
+        return resolved
+    for candidate in _codex_candidates():
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def codex_environment(executable):
+    environment = os.environ.copy()
+    parent = os.path.dirname(executable)
+    entries = [entry for entry in environment.get("PATH", "").split(os.pathsep) if entry]
+    if parent and parent not in entries:
+        environment["PATH"] = os.pathsep.join([parent] + entries)
+    return environment
+
 for directory in (
     QUEUE_DIR,
     WORKING_DIR,
@@ -354,7 +389,7 @@ def run_health_check():
         print(f"{'OK' if exists else 'FAIL'}  {label}")
         healthy = healthy and exists
 
-    codex_available = shutil.which("codex") is not None
+    codex_available = resolve_codex() is not None
     print(f"{'OK' if codex_available else 'FAIL'}  codex")
     return healthy and codex_available
 
@@ -494,9 +529,12 @@ def get_file_state(path):
 
 
 def run_codex(instruction, timeout_seconds=600):
+    executable = resolve_codex()
+    if not executable:
+        raise Exception("필수 명령을 찾을 수 없습니다: codex (PATH 또는 표준 설치 경로 확인 필요)")
     result = subprocess.run(
         [
-            "codex",
+            executable,
             "exec",
             "--skip-git-repo-check",
             instruction
@@ -505,7 +543,8 @@ def run_codex(instruction, timeout_seconds=600):
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=timeout_seconds
+        timeout=timeout_seconds,
+        env=codex_environment(executable),
     )
 
     if result.returncode != 0:
